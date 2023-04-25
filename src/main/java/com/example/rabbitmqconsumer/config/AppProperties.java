@@ -12,7 +12,8 @@ import org.springframework.stereotype.Component;
 public class AppProperties {
     private String directExchange;
 
-    private String directQueue;
+    private String requestQueue;
+    private String responseQueue;
 
     private int retryAttempts;
 
@@ -26,7 +27,7 @@ public class AppProperties {
 
     private int maxConcurrentConsumers;
 
-    public String getDirectDeadLetterQueue() {
-        return this.directQueue + ".dlq";
+    public String getRequestDeadLetterQueue() {
+        return this.requestQueue + ".dlq";
     }
 }

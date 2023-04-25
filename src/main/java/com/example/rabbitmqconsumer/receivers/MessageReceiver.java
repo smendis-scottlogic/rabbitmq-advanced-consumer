@@ -1,11 +1,14 @@
 package com.example.rabbitmqconsumer.receivers;
 
+import com.example.rabbitmqconsumer.exceptions.FailedProcessException;
 import com.example.rabbitmqconsumer.models.MyMessage;
 import com.rabbitmq.client.Channel;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
+
+import java.time.Instant;
 
 @Service
 public class MessageReceiver {
@@ -15,10 +18,12 @@ public class MessageReceiver {
             containerFactory = "rabbitListenerContainerFactory"
     )
     public void receiveMessage(MyMessage message) throws Exception {
-        System.out.println("-----------Received: "+message.toString());
+        System.out.println("-----------["+ Instant.now()+"]Received: "+message.toString());
         Thread.sleep(5000);
-        if(message.getMessageId() > 5){
-            throw new Exception("abc");
+        if(message.getMessageId() > 5) {
+            throw new Exception("my unknown error");
+        } else if(message.getMessageId() == 5){
+            throw new FailedProcessException("test error");
         } else if(message.getMessageId() == 3){
             System.out.println("Sleep for another 60 seconds");
             Thread.sleep(60000);

@@ -19,7 +19,8 @@ spring:
 app:
   rabbitmq:
     direct-exchange: my.direct
-    direct-queue: my.direct.request
+    request-queue: my.direct.request
+    response-queue: my.direct.response
     retry-attempts: 3
     backoff-interval: 1000
     backoff-multiplier: 2

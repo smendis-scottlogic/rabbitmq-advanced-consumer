@@ -17,6 +17,7 @@ import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConversionException;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.retry.interceptor.RetryOperationsInterceptor;
 import org.springframework.retry.interceptor.StatefulRetryOperationsInterceptor;
 import org.springframework.retry.policy.SimpleRetryPolicy;
 
@@ -39,9 +40,9 @@ public class RabbitMqConfig {
     @Bean
     public Queue requestQueue(){
         return QueueBuilder
-                .durable(properties.getDirectQueue())
-                .withArgument("x-dead-letter-exchange", properties.getDirectQueue())
-                .withArgument("x-dead-letter-routing-key", properties.getDirectDeadLetterQueue())
+                .durable(properties.getRequestQueue())
+                .withArgument("x-dead-letter-exchange", properties.getDirectExchange())
+                .withArgument("x-dead-letter-routing-key", properties.getRequestDeadLetterQueue())
                 .build();
     }
 
@@ -50,14 +51,30 @@ public class RabbitMqConfig {
         return BindingBuilder
                 .bind(requestQueue())
                 .to(directExchange())
-                .with(properties.getDirectQueue())
+                .with(properties.getRequestQueue())
+                .noargs();
+    }
+
+    @Bean
+    public Queue responseQueue(){
+        return QueueBuilder
+                .durable(properties.getResponseQueue())
+                .build();
+    }
+
+    @Bean
+    public Binding bindResponseQueue(){
+        return BindingBuilder
+                .bind(responseQueue())
+                .to(directExchange())
+                .with(properties.getResponseQueue())
                 .noargs();
     }
 
     @Bean
     public Queue requestDLQueue(){
         return QueueBuilder
-                .durable(properties.getDirectDeadLetterQueue())
+                .durable(properties.getRequestDeadLetterQueue())
                 .build();
     }
 
@@ -66,11 +83,10 @@ public class RabbitMqConfig {
         return BindingBuilder
                 .bind(requestDLQueue())
                 .to(directExchange())
-                .with(properties.getDirectDeadLetterQueue())
+                .with(properties.getRequestDeadLetterQueue())
                 .noargs();
     }
 
-    @Bean
     Jackson2JsonMessageConverter messageConverter(ObjectMapper mapper){
         var converter = new Jackson2JsonMessageConverter(mapper);
         converter.setCreateMessageIds(true); //create a unique message id for every message
@@ -78,37 +94,33 @@ public class RabbitMqConfig {
     }
 
     @Bean
+    public RabbitTemplate rabbitTemplate(ConnectionFactory factory, ObjectMapper objectMapper){
+        RabbitTemplate template = new RabbitTemplate();
+        template.setConnectionFactory(factory);
+        template.setMessageConverter(messageConverter(objectMapper));
+        return template;
+    }
+
+    @Bean
     public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
             ConnectionFactory connectionFactory,
-            StatefulRetryOperationsInterceptor retryInterceptor,
+            RetryOperationsInterceptor retryInterceptor,
             ObjectMapper objectMapper) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(messageConverter(objectMapper));
+        factory.setPrefetchCount(0);
         factory.setConcurrentConsumers(properties.getConcurrentConsumers());
         factory.setMaxConcurrentConsumers(properties.getMaxConcurrentConsumers());
-//        factory.setAcknowledgeMode(AcknowledgeMode.MANUAL);
-        factory.setPrefetchCount(0);
         factory.setAdviceChain(retryInterceptor);
         return factory;
     }
 
-//    @Bean
-//    public SimpleRetryPolicy rabbitRetryPolicy() {
-//        Map<Class<? extends Throwable>, Boolean> exceptionsMap = new HashMap<>();
-//        exceptionsMap.put(ListenerExecutionFailedException.class, true);
-//        exceptionsMap.put(MessageConversionException.class, false);
-//        exceptionsMap.put(FatalListenerExecutionException.class, false);
-//        return new SimpleRetryPolicy(properties.getRetryAttempts(), exceptionsMap, true);
-//    }
-
     @Bean
-    public StatefulRetryOperationsInterceptor messageRetryInterceptor(
-//            SimpleRetryPolicy retryPolicy,
+    public RetryOperationsInterceptor messageRetryInterceptor(
             MessageRecoverer messageRecoverer){
-        return RetryInterceptorBuilder.StatefulRetryInterceptorBuilder
-                .stateful()
-//                .retryPolicy(retryPolicy)
+        return RetryInterceptorBuilder.StatelessRetryInterceptorBuilder
+                .stateless()
                 .maxAttempts(properties.getRetryAttempts())
                 .backOffOptions(
                         properties.getBackoffInterval(),
@@ -120,12 +132,10 @@ public class RabbitMqConfig {
     }
 
     @Bean
-    public MessageRecoverer messageRecoverer(RabbitTemplate rabbitTemplate, ObjectMapper objectMapper){
-//        return new RejectAndDontRequeueRecoverer();
+    public MessageRecoverer messageRecoverer(RabbitTemplate template, AppProperties properties, ObjectMapper objectMapper){
         return new ErrorMessageResolver(
-                rabbitTemplate,
-                properties.getDirectExchange(),
-                properties.getDirectDeadLetterQueue(),
+                template,
+                properties,
                 messageConverter(objectMapper)
         );
     }
